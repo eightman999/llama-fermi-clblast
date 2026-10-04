@@ -146,8 +146,8 @@ class Params:
         return Params(
             n_vocab=n_vocab,
             n_embd=n_embd,
-            n_mult=256,
-            n_head=n_embd // 128,
+            n_mult=(8640 if n_embd == 3200 else 256),
+            n_head=(32 if n_embd == 3200 else n_embd // 128),
             n_layer=next(i for i in itertools.count() if f"layers.{i}.attention.wq.weight" not in model),
             file_type=file_type,
         )
@@ -597,7 +597,8 @@ def convert_transformers_to_orig(model: LazyModel) -> LazyModel:
     out["norm.weight"] = model["model.norm.weight"]
     out["output.weight"] = model["lm_head.weight"]
 
-    n_head = model["model.layers.0.self_attn.q_proj.weight"].shape[1] // 128
+    _d = model["model.layers.0.self_attn.q_proj.weight"].shape[1]
+    n_head = 32 if _d == 3200 else _d // 128
     for i in itertools.count():
         if f"model.layers.{i}.self_attn.q_proj.weight" not in model:
             break
@@ -753,8 +754,13 @@ def lazy_load_safetensors_file(fp: IO[bytes], path: Path) -> ModelPlus:
     byte_buf = mapped[8 + header_size:]
 
     def convert(info: Dict[str, Any]) -> LazyTensor:
-        data_type = SAFETENSORS_DATA_TYPES[info['dtype']]
-        numpy_dtype = DATA_TYPE_TO_NUMPY[data_type]
+        dtype_str = info["dtype"]
+        if dtype_str == "BF16":
+            data_type = DT_F32
+            numpy_dtype = np.dtype(np.uint16)
+        else:
+            data_type = SAFETENSORS_DATA_TYPES[dtype_str]
+            numpy_dtype = DATA_TYPE_TO_NUMPY[data_type]
         shape: List[int] = info['shape']
         begin, end = info['data_offsets']
         assert 0 <= begin <= end <= len(byte_buf)
@@ -762,7 +768,10 @@ def lazy_load_safetensors_file(fp: IO[bytes], path: Path) -> ModelPlus:
         buf = byte_buf[begin:end]
 
         def load() -> UnquantizedTensor:
-            return UnquantizedTensor(np.frombuffer(buf, dtype=numpy_dtype).reshape(shape))
+            arr = np.frombuffer(buf, dtype=numpy_dtype).reshape(shape)
+            if dtype_str == "BF16":
+                arr = (arr.astype(np.uint32) << 16).view(np.float32)
+            return UnquantizedTensor(arr)
         description = f'safetensors begin={begin} end={end} type={data_type} path={path}'
         return LazyTensor(load, shape, data_type, description)
     model = {name: convert(info) for (name, info) in header.items() if name != '__metadata__'}
