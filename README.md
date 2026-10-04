@@ -1,3 +1,72 @@
+# llama-fermi-clblast
+
+Fork of [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) pinned to commit `2e6cd4b` (2023-05-23, "OpenCL Token Generation Acceleration") with porting patches to run LLaMA-family models on legacy GPUs via OpenCL/CLBlast.
+
+2023 年当時の llama.cpp OpenCL(CLBlast) バックエンドで、GeForce GT 430 (Fermi, sm_21, OpenCL 1.1) を含むレガシー NVIDIA GPU で LLM 推論を動かすためのフォークです。
+
+## What this is
+
+- Base: `2e6cd4b` — the May 2023 CLBlast backend era (GGJT v3 model format, `make LLAMA_CLBLAST=1`)
+- Target: Fermi/Kepler-era NVIDIA cards driven by the NVIDIA 390.157 legacy driver (OpenCL 1.1/1.2 via `libnvidia-opencl`)
+- Verified on a GT 430 (964 MiB VRAM, PCIe 2.0 x1 riser): OpenLLaMA-3B Q4_0 generates text at ~1.35-2.40 tok/s with 4-10 layers offloaded
+
+## Patches on top of 2e6cd4b
+
+| Change | File | Purpose |
+|---|---|---|
+| BF16 safetensors decode (uint16 bit-shift to F32) | `convert.py` | Load modern BF16 HF checkpoints without torch |
+| `n_head` inference override (`n_embd==3200` -> 32) | `convert.py` | OpenLLaMA-3B uses head_dim=100, not 128 |
+| `n_mult` emitted as 8640 for `n_embd==3200` | `convert.py` | So the runtime n_ff formula yields 8640 |
+| `MODEL_1B` / `MODEL_3B` registration + mem req tables | `llama.cpp` | The era hardcodes model archs by n_layer; unknown archs assert |
+
+## Build
+
+```sh
+make LLAMA_CLBLAST=1     # needs clblast + OpenCL dev headers
+```
+
+## Run
+
+```sh
+# NVIDIA platform is index 0; pick device index inside that platform
+GGML_OPENCL_PLATFORM=0 GGML_OPENCL_DEVICE=1 \
+  ./main -m openllama-3b-q4_0-ggml.bin -ngl 8 -t 2 -p "Hello" -n 32
+```
+
+Device indices follow `clinfo -l` order within the NVIDIA platform (GT730=0, GT430=1, GT710=2 on our bench box).
+
+## Known pitfalls (driver side)
+
+- NVIDIA 390.157 DKMS builds on Linux 6.12 via Debian bookworm patches (`nvidia-legacy-390xx-kernel-dkms 390.157-16`)
+- If `clinfo` shows no NVIDIA platform or OpenCL calls segfault: check that the `/dev/nvidia-uvm` major number matches the `nvidia-uvm` entry in `/proc/devices`. A stale node left by a newer driver (e.g. 470-era major 235 vs the 390 module's 237) silently breaks enumeration.
+- Older `nvidia` modules may autoload again after running `nvidia-smi` — verify `nvidia-smi` prints 390.157 before testing.
+
+## Model format notes
+
+- This tree only reads **GGJT v3** `ggml-model-*.bin` files (pre-GGUF). Convert HF checkpoints with the included `convert.py` (`numpy` + `sentencepiece` only), then `./quantize`.
+- GQA models (TinyLlama, Llama-2-70B, etc.) are **not supported** — this commit predates grouped-query attention. Use MHA models like OpenLLaMA.
+- Ready-made GGML artifacts: https://huggingface.co/eightman999/openllama-3b-ggml-legacy
+
+## Results on GT 430 (Fermi, PCIe 2.0 x1)
+
+OpenLLaMA-3B Q4_0 (1.93 GB), ctx=512:
+
+| config | decode | VRAM |
+|---|---:|---:|
+| CPU only (ngl=0) | 4.91 t/s | - |
+| GT430 ngl=4 | 2.40 t/s | ~270 MB |
+| GT430 ngl=8 | 1.58 t/s | 531 MB |
+| GT430 ngl=10 | 1.35 t/s | 664 MB |
+| GT430 ngl=12 | runtime OOM (-4) | 797 MB |
+
+Offloading costs roughly +55 ms/token per layer over the x1 link — the GPU works, but plain CPU wins. It is a survival demonstration, not a speedup.
+
+## License
+
+MIT (same as upstream llama.cpp). All modifications are on top of `2e6cd4b` and visible in the commit history of the `fermi-clblast` branch.
+
+---
+
 # llama.cpp
 
 ![llama](https://user-images.githubusercontent.com/1991296/230134379-7181e485-c521-4d23-a0d6-f7b3b61ba524.png)
