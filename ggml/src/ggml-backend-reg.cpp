@@ -58,6 +58,10 @@
 #include "ggml-opencl.h"
 #endif
 
+#ifdef GGML_USE_CL11
+#include "ggml-cl11.h"
+#endif
+
 #ifdef GGML_USE_HEXAGON
 #include "ggml-hexagon.h"
 #endif
@@ -146,6 +150,9 @@ struct ggml_backend_registry {
 
 #ifdef GGML_USE_OPENCL
         register_backend(ggml_backend_opencl_reg());
+#endif
+#ifdef GGML_USE_CL11
+        register_backend(ggml_backend_cl11_reg());
 #endif
 #ifdef GGML_USE_ZENDNN
         register_backend(ggml_backend_zendnn_reg());
@@ -593,6 +600,7 @@ void ggml_backend_load_all_from_path(const char * dir_path) {
     ggml_backend_load_best("vulkan", silent, dir_path);
     ggml_backend_load_best("virtgpu", silent, dir_path);
     ggml_backend_load_best("opencl", silent, dir_path);
+    ggml_backend_load_best("cl11", silent, dir_path);
     ggml_backend_load_best("hexagon", silent, dir_path);
     ggml_backend_load_best("musa", silent, dir_path);
     ggml_backend_load_best("openvino", silent, dir_path);

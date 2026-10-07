@@ -80,6 +80,11 @@ if (NOT GGML_SHARED_LIB)
         set(GGML_OPENCL_INTERFACE_LINK_LIBRARIES $<LINK_ONLY:OpenCL::OpenCL>)
     endif()
 
+    if (GGML_CL11)
+        find_dependency(OpenCL)
+        set(GGML_CL11_INTERFACE_LINK_LIBRARIES $<LINK_ONLY:OpenCL::OpenCL>)
+    endif()
+
     if (GGML_VULKAN)
         find_dependency(Vulkan)
         set(GGML_VULKAN_INTERFACE_LINK_LIBRARIES $<LINK_ONLY:Vulkan::Vulkan>)

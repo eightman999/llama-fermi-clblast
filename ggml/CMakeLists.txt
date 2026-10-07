@@ -264,6 +264,7 @@ option(GGML_ET                              "ggml: use ET backend"              
 option(GGML_ET_SYSEMU                       "ggml: use ET backend via sysemu"                 OFF)
 
 option(GGML_OPENCL                          "ggml: use OpenCL"                                OFF)
+option(GGML_CL11                            "ggml: use the OpenCL 1.1 backend (old GPUs, e.g. NVIDIA Fermi)" OFF)
 option(GGML_OPENCL_PROFILING                "ggml: use OpenCL profiling (increases overhead)" OFF)
 option(GGML_OPENCL_EMBED_KERNELS            "ggml: embed kernels"                             ON)
 option(GGML_OPENCL_USE_ADRENO_KERNELS       "ggml: use optimized kernels for Adreno"          ON)
