@@ -99,7 +99,7 @@ float4 f4_n1(uint w) { return f4_mag((w >> 4) & 0x0F0F0F0Fu) - (float4)(8388616.
             const float s1 = dot(f4_u8(a.z), x2) + dot(f4_u8(a.w), x3);                               \
             const float s2 = dot(f4_u8(c.x), x4) + dot(f4_u8(c.y), x5);                               \
             const float s3 = dot(f4_u8(c.z), x6) + dot(f4_u8(c.w), x7);                               \
-            acc[j] = fma(d, (s0 + s1) + (s2 + s3), acc[j]);                                           \
+            acc[j] = CL11_FMA(d, (s0 + s1) + (s2 + s3), acc[j]);                                           \
             qp[j] += NWR * 2 * RS(j);                                                                 \
             dp[j] += NWR * 2 * RS(j);                                                                 \
         }                                                                                             \
@@ -116,7 +116,7 @@ float4 f4_n1(uint w) { return f4_mag((w >> 4) & 0x0F0F0F0Fu) - (float4)(8388616.
             const float s1 = dot(f4_n0(a.z), x2) + dot(f4_n0(a.w), x3);                               \
             const float s2 = dot(f4_n1(a.x), x4) + dot(f4_n1(a.y), x5);                               \
             const float s3 = dot(f4_n1(a.z), x6) + dot(f4_n1(a.w), x7);                               \
-            acc[j] = fma(d, (s0 + s1) + (s2 + s3), acc[j]);                                           \
+            acc[j] = CL11_FMA(d, (s0 + s1) + (s2 + s3), acc[j]);                                           \
             qp[j] += NWR * RS(j);                                                                     \
             dp[j] += NWR * 2 * RS(j);                                                                 \
         }                                                                                             \

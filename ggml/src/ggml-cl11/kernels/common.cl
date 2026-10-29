@@ -11,6 +11,14 @@
 //   WG_MV   work-group size of the mat-vec kernels (power of 2)
 //   GT      the tiled mat-mat kernels use GT*GT work-items and compute (4*GT)x(4*GT) tiles
 
+//   CL11_MAD  use mad() instead of fma() (CL11_FMA): Mesa rusticl emulates fma() in software on the GCN GPUs (~100x slower than mad),
+//             set by the host for the AMD devices (cl11_tuning_for), the other devices keep the fused fma()
+#ifdef CL11_MAD
+#define CL11_FMA(a, b, c) mad(a, b, c)
+#else
+#define CL11_FMA(a, b, c) fma(a, b, c)
+#endif
+
 // Tensor descriptor, passed by value. The layout (9 x int) must match struct cl11_td on the host.
 // ne: number of elements, nb: strides in bytes, off: byte offset of the first element in the cl_mem.
 // fm*/fl*: magic numbers to divide by ne0..ne3 without an integer division (see FDIV): the integer division

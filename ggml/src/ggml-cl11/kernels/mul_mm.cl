@@ -188,22 +188,22 @@ kernel void NAME(global uchar * pa, tdesc ta, global uchar * pb, tdesc tb, globa
             const float4 a0 = As4[kk * (BMS / 4) + tx];                                                         \
             const float4 a1 = As4[kk * (BMS / 4) + TXN + tx];                                                   \
             const float4 b  = Bs4[kk * ((BN + 4) / 4) + ty];                                                   \
-            acc[0][0] = fma(a0.x, b.x, acc[0][0]); acc[0][1] = fma(a0.x, b.y, acc[0][1]);                      \
-            acc[0][2] = fma(a0.x, b.z, acc[0][2]); acc[0][3] = fma(a0.x, b.w, acc[0][3]);                      \
-            acc[1][0] = fma(a0.y, b.x, acc[1][0]); acc[1][1] = fma(a0.y, b.y, acc[1][1]);                      \
-            acc[1][2] = fma(a0.y, b.z, acc[1][2]); acc[1][3] = fma(a0.y, b.w, acc[1][3]);                      \
-            acc[2][0] = fma(a0.z, b.x, acc[2][0]); acc[2][1] = fma(a0.z, b.y, acc[2][1]);                      \
-            acc[2][2] = fma(a0.z, b.z, acc[2][2]); acc[2][3] = fma(a0.z, b.w, acc[2][3]);                      \
-            acc[3][0] = fma(a0.w, b.x, acc[3][0]); acc[3][1] = fma(a0.w, b.y, acc[3][1]);                      \
-            acc[3][2] = fma(a0.w, b.z, acc[3][2]); acc[3][3] = fma(a0.w, b.w, acc[3][3]);                      \
-            acc[4][0] = fma(a1.x, b.x, acc[4][0]); acc[4][1] = fma(a1.x, b.y, acc[4][1]);                      \
-            acc[4][2] = fma(a1.x, b.z, acc[4][2]); acc[4][3] = fma(a1.x, b.w, acc[4][3]);                      \
-            acc[5][0] = fma(a1.y, b.x, acc[5][0]); acc[5][1] = fma(a1.y, b.y, acc[5][1]);                      \
-            acc[5][2] = fma(a1.y, b.z, acc[5][2]); acc[5][3] = fma(a1.y, b.w, acc[5][3]);                      \
-            acc[6][0] = fma(a1.z, b.x, acc[6][0]); acc[6][1] = fma(a1.z, b.y, acc[6][1]);                      \
-            acc[6][2] = fma(a1.z, b.z, acc[6][2]); acc[6][3] = fma(a1.z, b.w, acc[6][3]);                      \
-            acc[7][0] = fma(a1.w, b.x, acc[7][0]); acc[7][1] = fma(a1.w, b.y, acc[7][1]);                      \
-            acc[7][2] = fma(a1.w, b.z, acc[7][2]); acc[7][3] = fma(a1.w, b.w, acc[7][3]);                      \
+            acc[0][0] = CL11_FMA(a0.x, b.x, acc[0][0]); acc[0][1] = CL11_FMA(a0.x, b.y, acc[0][1]);                      \
+            acc[0][2] = CL11_FMA(a0.x, b.z, acc[0][2]); acc[0][3] = CL11_FMA(a0.x, b.w, acc[0][3]);                      \
+            acc[1][0] = CL11_FMA(a0.y, b.x, acc[1][0]); acc[1][1] = CL11_FMA(a0.y, b.y, acc[1][1]);                      \
+            acc[1][2] = CL11_FMA(a0.y, b.z, acc[1][2]); acc[1][3] = CL11_FMA(a0.y, b.w, acc[1][3]);                      \
+            acc[2][0] = CL11_FMA(a0.z, b.x, acc[2][0]); acc[2][1] = CL11_FMA(a0.z, b.y, acc[2][1]);                      \
+            acc[2][2] = CL11_FMA(a0.z, b.z, acc[2][2]); acc[2][3] = CL11_FMA(a0.z, b.w, acc[2][3]);                      \
+            acc[3][0] = CL11_FMA(a0.w, b.x, acc[3][0]); acc[3][1] = CL11_FMA(a0.w, b.y, acc[3][1]);                      \
+            acc[3][2] = CL11_FMA(a0.w, b.z, acc[3][2]); acc[3][3] = CL11_FMA(a0.w, b.w, acc[3][3]);                      \
+            acc[4][0] = CL11_FMA(a1.x, b.x, acc[4][0]); acc[4][1] = CL11_FMA(a1.x, b.y, acc[4][1]);                      \
+            acc[4][2] = CL11_FMA(a1.x, b.z, acc[4][2]); acc[4][3] = CL11_FMA(a1.x, b.w, acc[4][3]);                      \
+            acc[5][0] = CL11_FMA(a1.y, b.x, acc[5][0]); acc[5][1] = CL11_FMA(a1.y, b.y, acc[5][1]);                      \
+            acc[5][2] = CL11_FMA(a1.y, b.z, acc[5][2]); acc[5][3] = CL11_FMA(a1.y, b.w, acc[5][3]);                      \
+            acc[6][0] = CL11_FMA(a1.z, b.x, acc[6][0]); acc[6][1] = CL11_FMA(a1.z, b.y, acc[6][1]);                      \
+            acc[6][2] = CL11_FMA(a1.z, b.z, acc[6][2]); acc[6][3] = CL11_FMA(a1.z, b.w, acc[6][3]);                      \
+            acc[7][0] = CL11_FMA(a1.w, b.x, acc[7][0]); acc[7][1] = CL11_FMA(a1.w, b.y, acc[7][1]);                      \
+            acc[7][2] = CL11_FMA(a1.w, b.z, acc[7][2]); acc[7][3] = CL11_FMA(a1.w, b.w, acc[7][3]);                      \
         }                                                                                                      \
         barrier(CLK_LOCAL_MEM_FENCE);                                                                          \
     }                                                                                                          \

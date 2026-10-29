@@ -64,6 +64,7 @@ struct cl11_device_info {
 
     std::string name;
     std::string platform_name;
+    std::string vendor;         // CL_DEVICE_VENDOR
     std::string device_version; // "OpenCL 1.1 CUDA"
     std::string c_version;      // "OpenCL C 1.1 "
 
@@ -89,6 +90,7 @@ struct cl11_config {
     int wg_mvr  = 64;  // mat-vec of the repacked Q4_0 / Q8_0 weights: work-items per group (32 * warps; the warps split the blocks of the rows)
     int mvr_nrr = 2;   // ... groups of 32 rows per lane (rows per lane)
     int mm_bn   = 8;   // mat-mat: the dst tile is (4 * gt) rows of src0 x (mm_bn * gt) rows of src1 (4 or 8), (gt / 2) x (mm_bn * gt / 4) work-items
+    bool use_mad = false; // mad() instead of fma() in the kernels (-DCL11_MAD): fma() is emulated in software by Mesa rusticl on GCN
 };
 
 // Per-GPU tuning. Everything that depends on the architecture is chosen here (and only here), from the compute
@@ -100,6 +102,7 @@ struct cl11_tuning {
     int         mvs_min_k   = 256;   // shortest row that uses the k_mvx / k_mvw mat-vec kernels (K-quants, F16, F32)
     int         mvs_family  = 0;     // 0: automatic (k_mvx for Q4_K, k_mvw for the others), 1: k_mvx, 2: k_mvw
     bool        mvr_const_x = false; // k_mvrc_*: src1 of a single column through a constant-memory sub-buffer (no load / store unit)
+    bool         strict_alloc = false; // the driver refuses a cl_mem larger than CL_DEVICE_MAX_MEM_ALLOC_SIZE (Mesa: CL_INVALID_BUFFER_SIZE)
     const char * name       = "default";
 };
 
@@ -297,6 +300,7 @@ struct cl11_device_context {
     int  mvs_family  = 0;     // 0: automatic, 1: k_mvx (src1 in local memory), 2: k_mvw (src1 through the caches)
     bool mvr_const_x = false; // GGML_CL11_MVR_CONST_X=0/1
     size_t max_const = 0;     // CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE
+    bool strict_alloc_dev = false; // cl11_tuning::strict_alloc: like GGML_CL11_STRICT_ALLOC=1, and supports_op rejects tensors above the limit
 
     // sub-buffers of src1 for the constant memory (key: parent, offset, size); released with the parent buffer
     struct const_sub {
@@ -430,6 +434,18 @@ static cl11_tuning cl11_tuning_for(const cl11_device_info & info) {
         t.mvs_family   = 0;
         t.mvr_const_x  = true;   // Fermi: +15% (Q8_0) .. +30% (Q4_0), the x loads of 2 rows compete with the weights for the load units
     }
+    const std::string lvendor = cl11_lower(info.vendor);
+    const bool amd = lvendor.find("amd") != std::string::npos || lvendor.find("advanced micro") != std::string::npos ||
+                     lname.find("radeon") != std::string::npos;
+    if (!fermi && info.nv_cc_major == 0 && amd) {
+        // AMD GCN (Polaris 12: Radeon Pro WX 2100, 8 CUs, wave64, ~44 GB/s) through Mesa rusticl / Clover, or the AMD drivers
+        t.name = "AMD (GCN)";
+        t.cfg.use_mad = true;  // rusticl emulates fma() in software (mat-mat 3.5 -> 450+ GFLOPS with mad())
+        t.strict_alloc = true; // Mesa (Clover, rusticl) refuses a buffer above CL_DEVICE_MAX_MEM_ALLOC_SIZE (512 MiB): CL_INVALID_BUFFER_SIZE
+        t.cfg.wg_mvr   = 256;  // mat-vec of Q4_0 / Q8_0: 8 warps per group, 1 row per lane: 96 groups for a 3072-row matrix (8 CUs); 64 x 2 rows: 48 groups, 21 -> 35 GB/s
+        t.cfg.mvr_nrr  = 1;    //   (tg of Qwen3-0.6B Q8_0 / navspec Q4_0 on Clover: 64x2: 18.0 / 21.2, 64x1: 19.5 / 23.0, 128x1: 19.7 / 25.4, 256x1: 20.2 / 25.6 t/s)
+        t.cfg.mm_bn    = 4;    // 64 x 64 tiles (128 work-items of 8 x 4 values): 530-620 GFLOPS (Q8_0) instead of 345-410 with 64 x 128
+    }
     // Kepler (GT 710 / GT 730, sm_3x) and everything else: not tuned yet, same values
     return t;
 }
@@ -493,6 +509,7 @@ static void cl11_probe_devices() {
             info.device        = device;
             info.name          = cl11_device_str(device, CL_DEVICE_NAME);
             info.platform_name = pname;
+            info.vendor        = cl11_device_str(device, CL_DEVICE_VENDOR);
             info.device_version = cl11_device_str(device, CL_DEVICE_VERSION);
             info.c_version     = cl11_device_str(device, CL_DEVICE_OPENCL_C_VERSION);
             info.max_alloc     = (size_t) cl11_device_val<cl_ulong>(device, CL_DEVICE_MAX_MEM_ALLOC_SIZE);
@@ -533,6 +550,7 @@ static void cl11_probe_devices() {
 
             auto ctx = std::make_unique<cl11_device_context>();
             ctx->info  = info;
+            ctx->strict_alloc_dev = cl11_tuning_for(info).strict_alloc;
             ctx->index = (int) g_cl11_devices.size();
             ctx->name  = "CL11_" + std::to_string(ctx->index);
             g_cl11_devices.push_back(std::move(ctx));
@@ -546,8 +564,8 @@ static void cl11_probe_devices() {
 
 static bool cl11_build_program(cl11_device_context * c, const cl11_config & cfg, std::string & log) {
     char opts[512];
-    snprintf(opts, sizeof(opts), "-cl-std=CL1.1 -DWG_EW=%d -DWG_ROW=%d -DWG_MV=%d -DGT=%d -DNRW=%d -DWG_MVR=%d -DNRR=%d -DMMBN=%d%s %s",
-            cfg.wg_ew, cfg.wg_row, cfg.wg_mv, cfg.gt, cfg.mvs_nrw, cfg.wg_mvr, cfg.mvr_nrr, cfg.mm_bn, c->use_nv_asm ? " -DCL11_NV_ASM" : "", getenv("GGML_CL11_BUILD_OPTS") ? getenv("GGML_CL11_BUILD_OPTS") : "");
+    snprintf(opts, sizeof(opts), "-cl-std=CL1.1 -DWG_EW=%d -DWG_ROW=%d -DWG_MV=%d -DGT=%d -DNRW=%d -DWG_MVR=%d -DNRR=%d -DMMBN=%d%s%s %s",
+            cfg.wg_ew, cfg.wg_row, cfg.wg_mv, cfg.gt, cfg.mvs_nrw, cfg.wg_mvr, cfg.mvr_nrr, cfg.mm_bn, c->use_nv_asm ? " -DCL11_NV_ASM" : "", cfg.use_mad ? " -DCL11_MAD" : "", getenv("GGML_CL11_BUILD_OPTS") ? getenv("GGML_CL11_BUILD_OPTS") : "");
 
     // GGML_CL11_KERNEL_DIR: read the .cl files from this directory instead of the embedded copies (development)
     std::vector<std::string> file_sources;
@@ -709,6 +727,9 @@ static bool cl11_ensure_program(cl11_device_context * c) {
         const int cap = cl11_pow2_floor(limit_wg);
         cfg.wg_ew  = std::min(cfg.wg_ew,  cap);
         cfg.wg_row = std::min(cfg.wg_row, cap);
+        if (const char * env = getenv("GGML_CL11_MAD")) {
+            cfg.use_mad = atoi(env) != 0;
+        }
         if (const char * env = getenv("GGML_CL11_MVS_NRW")) {
             cfg.mvs_nrw = std::max(1, std::min(8, atoi(env)));
         }
@@ -1318,7 +1339,7 @@ static bool cl11_strict_alloc() {
 // so a single tensor that is larger than the nominal limit (e.g. the logits) can still be allocated.
 // Never more than the global memory, and never more than what the 32-bit offsets of the kernels can address.
 static size_t cl11_max_alloc_size(const cl11_device_context * c) {
-    if (cl11_strict_alloc()) {
+    if (cl11_strict_alloc() || c->strict_alloc_dev) {
         return cl11_max_buffer_size(c);
     }
     return std::min(std::max(c->info.global_mem, c->info.max_alloc), CL11_MAX_BUFFER_SIZE);
@@ -1442,8 +1463,6 @@ static bool cl11_fits_int(const ggml_tensor * t) {
 }
 
 static bool cl11_supports_op_impl(const cl11_device_context * c, const ggml_tensor * op) {
-    GGML_UNUSED(c);
-
     const ggml_tensor * src0 = op->src[0];
     const ggml_tensor * src1 = op->src[1];
     const ggml_tensor * src2 = op->src[2];
@@ -1466,6 +1485,17 @@ static bool cl11_supports_op_impl(const cl11_device_context * c, const ggml_tens
     }
     if (!cl11_fits_int(op)) {
         return false;
+    }
+    if (c->strict_alloc_dev) {
+        // the driver cannot allocate a tensor larger than CL_DEVICE_MAX_MEM_ALLOC_SIZE
+        if (ggml_nbytes(op) > cl11_max_buffer_size(c)) {
+            return false;
+        }
+        for (int i = 0; i < GGML_MAX_SRC; ++i) {
+            if (op->src[i] != nullptr && ggml_nbytes(op->src[i]) > cl11_max_buffer_size(c)) {
+                return false;
+            }
+        }
     }
 
     switch (op->op) {
